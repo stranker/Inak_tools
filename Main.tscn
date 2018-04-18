@@ -1,0 +1,126 @@
+[gd_scene load_steps=2 format=2]
+
+[sub_resource type="GDScript" id=1]
+
+resource_name = "Main.gd"
+script/source = "extends Node
+
+var diccionario = {}
+var allmes = []
+var archivo = File.new()
+
+func _ready():
+	$AcceptDialog.hide()
+	$AcceptDialog.dialog_text = \"No existen archivos ALLME en el escritorio\"
+	pass
+
+func routes_and_ips(linea):
+	if (linea.findn(\"ADD SIPTG\")>=0):
+		var pos_ini_route = linea.findn(\"TGN\") + 5
+		var pos_fin_route = linea.find(\"CSCN\") - 2
+		var route_name = linea.left(pos_fin_route).right(pos_ini_route)
+		var pos_ini_ip = linea.findn(\"OSU=\") + 5
+		var pos_fin_ip = linea.findn(\"ISST\") - 7
+		var ip_name = linea.left(pos_fin_ip).right(pos_ini_ip)
+		diccionario[route_name] = str(ip_name)
+	pass
+
+func llenar_allmes():
+	var cont = 0
+	var arch = File.new()
+	for i in range(5):
+		var file_path = \"C:/Users/Capo/Desktop/ALLME_\"+ str(cont) + \".txt\"
+		if arch.file_exists(file_path):
+			allmes.append(file_path)
+			cont += 1
+	if cont == 0:
+		$AcceptDialog.popup_centered()
+	else:
+		leer_archivos()
+		crear_archivo()
+	pass
+
+func cerrar_archivo():
+	archivo.close()
+	pass
+
+
+func leer_archivos():
+	for i in allmes:
+		archivo.open(i,File.READ)
+		while !archivo.eof_reached():
+			var linea = archivo.get_line()
+			routes_and_ips(linea)
+		archivo.close()
+	pass
+
+func crear_archivo():
+	var nuevo_archivo = File.new()
+	nuevo_archivo.open(\"C:/Users/Capo/Desktop/rutas_e_ip.txt\",File.WRITE)
+	nuevo_archivo.store_line(\"Nombre Ruta  \\t IP Asociada\")
+	nuevo_archivo.store_line(\"\")
+	for i in diccionario.keys():
+		nuevo_archivo.store_line(i+\"\\t\"+diccionario[i])
+	nuevo_archivo.close()
+	pass
+
+func _on_BuscarAllme_pressed():
+	llenar_allmes()
+	pass # replace with function body
+"
+_sections_unfolded = [ "Resource" ]
+
+[node name="Main" type="Node" index="0"]
+
+script = SubResource( 1 )
+
+[node name="BuscarAllme" type="Button" parent="." index="0"]
+
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -117.0
+margin_top = -100.0
+margin_right = 8.0
+margin_bottom = -61.0
+rect_scale = Vector2( 2, 2 )
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+toggle_mode = false
+enabled_focus_mode = 2
+shortcut = null
+group = null
+text = "Buscar Allme"
+flat = false
+align = 1
+_sections_unfolded = [ "Rect" ]
+
+[node name="AcceptDialog" type="AcceptDialog" parent="." index="1"]
+
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 306.0
+margin_top = 317.0
+margin_right = 515.0
+margin_bottom = 416.0
+rect_pivot_offset = Vector2( 0, 0 )
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+popup_exclusive = false
+window_title = "Alerta!"
+resizable = false
+dialog_hide_on_ok = true
+
+[connection signal="pressed" from="BuscarAllme" to="." method="_on_BuscarAllme_pressed"]
+
+
