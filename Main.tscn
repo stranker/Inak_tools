@@ -5,13 +5,70 @@
 resource_name = "Main.gd"
 script/source = "extends Node
 
+var pathDir = \"//Capo-10/inoc-gestion/Inak_tools/\"
+var pathOperacion = pathDir+\"Operaciones-Carriers/Operacion.txt\"
+var pathCarrier = \"//Capo-10/inoc-gestion/Inak_tools/Operaciones-Carriers/Carriers.txt\"
+var path_archivo_rutas_e_ip = pathDir+\"OutputApp/rutas_e_ip.txt\"
+var pathAllme = pathDir+\"ALLME_\"
+
 var diccionario = {}
+var diccFiltrado = {}
+var keys_ordenadas = []
+var keys_diccionario = []
 var allmes = []
 var archivo = File.new()
+var carriersRutas = {}
+var operacionRutas = {}
 
 func _ready():
 	$AcceptDialog.hide()
-	$AcceptDialog.dialog_text = \"No existen archivos ALLME en el escritorio\"
+	$AcceptDialog.dialog_text = \"No existen archivos ALLME en CAPO-10\"
+	cargarRutasSiExisten()
+	cargarCarriersOperaciones()
+	$Panel/Info.get_v_scroll().min_value = -10
+	$Panel/InfoIp.get_v_scroll().min_value = -10
+	pass
+
+func _process(delta):
+	$Panel/Info.get_v_scroll().value = $Panel/InfoIp.get_v_scroll().value
+
+func cargarRutasSiExisten():
+	if archivo.file_exists(path_archivo_rutas_e_ip):
+		cargar_rutas_archivo()
+		llenar_info(diccionario)
+		keys_diccionario = diccionario.keys()
+		keys_diccionario.sort()
+	pass
+
+func cargarCarriersOperaciones():
+	var archOperacion = File.new()
+	var archCarrier = File.new()
+	if archOperacion.file_exists(pathOperacion):
+		archOperacion.open(pathOperacion,File.READ)
+		while !archOperacion.eof_reached():
+			var line = archOperacion.get_line()
+			if (!(line.begins_with(\"//\") || line == \"\")):
+				operacionRutas[line.substr(0,line.find(\"\\t\"))] = line.substr(line.find(\"\\t\")+1,2)
+	if archCarrier.file_exists(pathCarrier):
+		archCarrier.open(pathCarrier,File.READ)
+		while !archCarrier.eof_reached():
+			var line = archCarrier.get_line()
+			if (!(line.begins_with(\"//\") || line == \"\")):
+				carriersRutas[line.substr(0,line.find(\"\\t\"))] = line.substr(line.find(\"\\t\")+1,2)
+	archOperacion.close()
+	archCarrier.close()
+	pass
+
+func llenar_info(dicc):
+	$Panel/Info.clear()
+	$Panel/InfoIp.clear()
+	keys_ordenadas = dicc.keys()
+	keys_ordenadas.sort()
+	for i in keys_ordenadas:
+		$Panel/Info.add_text(i)
+		$Panel/Info.newline()
+		$Panel/InfoIp.add_text(dicc[i])
+		$Panel/InfoIp.newline()
 	pass
 
 func routes_and_ips(linea):
@@ -28,8 +85,8 @@ func routes_and_ips(linea):
 func llenar_allmes():
 	var cont = 0
 	var arch = File.new()
-	for i in range(5):
-		var file_path = \"C:/Users/Capo/Desktop/ALLME_\"+ str(cont) + \".txt\"
+	for i in range(10):
+		var file_path = pathAllme+ str(cont) + \".txt\"
 		if arch.file_exists(file_path):
 			allmes.append(file_path)
 			cont += 1
@@ -39,11 +96,6 @@ func llenar_allmes():
 		leer_archivos()
 		crear_archivo()
 	pass
-
-func cerrar_archivo():
-	archivo.close()
-	pass
-
 
 func leer_archivos():
 	for i in allmes:
@@ -56,18 +108,106 @@ func leer_archivos():
 
 func crear_archivo():
 	var nuevo_archivo = File.new()
-	nuevo_archivo.open(\"C:/Users/Capo/Desktop/rutas_e_ip.txt\",File.WRITE)
+	nuevo_archivo.open(path_archivo_rutas_e_ip,File.WRITE)
 	nuevo_archivo.store_line(\"Nombre Ruta  \\t IP Asociada\")
 	nuevo_archivo.store_line(\"\")
 	for i in diccionario.keys():
 		nuevo_archivo.store_line(i+\"\\t\"+diccionario[i])
 	nuevo_archivo.close()
+	llenar_info(diccionario)
 	pass
 
 func _on_BuscarAllme_pressed():
 	llenar_allmes()
 	pass # replace with function body
-"
+
+func cargar_rutas_archivo():
+	var arch = File.new()
+	arch.open(path_archivo_rutas_e_ip,File.READ)
+	while !arch.eof_reached():
+		var line = arch.get_line()
+		if !(line.begins_with(\"Nombre\") || line == \"\"):
+			var fin_ruta = line.find(\"172.26\") - 1
+			diccionario[line.substr(0,fin_ruta)] = str(line.substr(fin_ruta+1,line.length()))
+	arch.close()
+	pass
+
+func _on_Ruta_text_changed():
+	search_in_dictionary(\"ruta\",$Ruta/Ruta.text.to_upper())
+	pass
+
+func search_in_dictionary(type, search):
+	if search != \"\":
+		$Panel/Info.clear()
+		$Panel/InfoIp.clear()
+		diccFiltrado.clear()
+		#BUSQUEDA EN RUTAS
+		for i in keys_diccionario:
+			match type:
+				\"ruta\":
+					if i.find(search) >= 0:
+						diccFiltrado[i] = diccionario[i]
+				\"ip\":
+					if diccionario[i].find(search) >= 0:
+						diccFiltrado[i] = diccionario[i]
+				\"carrier\":
+					if i.begins_with(\"2US\"+search) or i.begins_with(\"5US\"+search):
+						diccFiltrado[i] = diccionario[i]
+				\"operacion\":
+					if i.begins_with(\"1\"+search) or i.begins_with(\"4\"+search):
+						diccFiltrado[i] = diccionario[i]
+		#BUSQUEDA POR CARRIER
+		if diccFiltrado.empty():
+			for i in carriersRutas.keys():
+				if i.find(search) >= 0:
+					search_in_dictionary(\"carrier\", carriersRutas[i])
+					break
+		#BUSQUEDA POR OPERACION
+		if diccFiltrado.empty():
+			for i in operacionRutas.keys():
+				if i.find(search) >= 0:
+					search_in_dictionary(\"operacion\", operacionRutas[i])
+					break
+		llenar_info(diccFiltrado)
+	else:
+		llenar_info(diccionario)
+	pass
+
+func _on_Ip_text_changed():
+	search_in_dictionary(\"ip\", $Ip/Ip.text)
+	pass
+
+func _on_Ruta_focus_exited():
+	$Ruta/Ruta.text = \"\"
+	pass # replace with function body
+
+func _on_Ip_focus_exited():
+	$Ip/Ip.text = \"\"
+	pass # replace with function body
+
+func _on_Info_gui_input( ev ):
+	if ev is InputEventMouseButton:
+		if ev.button_index == BUTTON_WHEEL_UP:
+			scroll_up()
+		elif ev.button_index == BUTTON_WHEEL_DOWN:
+			scroll_down()
+	pass # replace with function body
+
+func _on_InfoIp_gui_input( ev ):
+	if ev is InputEventMouseButton:
+		if ev.button_index == BUTTON_WHEEL_UP:
+			scroll_up()
+		elif ev.button_index == BUTTON_WHEEL_DOWN:
+			scroll_down()
+	pass # replace with function body
+
+func scroll_up():
+	$Panel/InfoIp.get_v_scroll().value -= 50
+	pass
+
+func scroll_down():
+	$Panel/InfoIp.get_v_scroll().value += 50
+	pass"
 _sections_unfolded = [ "Resource" ]
 
 [node name="Main" type="Node" index="0"]
@@ -77,15 +217,15 @@ script = SubResource( 1 )
 [node name="BuscarAllme" type="Button" parent="." index="0"]
 
 anchor_left = 0.5
-anchor_top = 0.5
+anchor_top = 1.0
 anchor_right = 0.5
-anchor_bottom = 0.5
-margin_left = -117.0
+anchor_bottom = 1.0
+margin_left = -67.0
 margin_top = -100.0
-margin_right = 8.0
-margin_bottom = -61.0
-rect_scale = Vector2( 2, 2 )
-rect_pivot_offset = Vector2( 0, 0 )
+margin_right = 63.0
+margin_bottom = -60.0
+rect_scale = Vector2( 1.5, 1.5 )
+rect_pivot_offset = Vector2( 65, 20 )
 focus_mode = 2
 mouse_filter = 0
 mouse_default_cursor_shape = 0
@@ -121,6 +261,240 @@ window_title = "Alerta!"
 resizable = false
 dialog_hide_on_ok = true
 
+[node name="Ruta" type="Label" parent="." index="2"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 60.0
+margin_top = 180.0
+margin_right = 100.0
+margin_bottom = 194.0
+rect_pivot_offset = Vector2( 0, 0 )
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "Ruta"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Ruta" type="TextEdit" parent="Ruta" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 15.0
+margin_right = 150.0
+margin_bottom = 45.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+text = ""
+readonly = false
+highlight_current_line = false
+syntax_highlighting = false
+show_line_numbers = false
+highlight_all_occurrences = false
+override_selected_font_color = false
+context_menu_enabled = true
+smooth_scrolling = false
+v_scroll_speed = 80.0
+hiding_enabled = 0
+wrap_lines = false
+caret_block_mode = false
+caret_blink = false
+caret_blink_speed = 0.65
+caret_moving_by_right_click = true
+_sections_unfolded = [ "Rect" ]
+
+[node name="Ip" type="Label" parent="." index="3"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 60.0
+margin_top = 280.0
+margin_right = 100.0
+margin_bottom = 294.0
+rect_pivot_offset = Vector2( 0, 0 )
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "Ip"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Ip" type="TextEdit" parent="Ip" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 15.0
+margin_right = 150.0
+margin_bottom = 45.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+text = ""
+readonly = false
+highlight_current_line = false
+syntax_highlighting = false
+show_line_numbers = false
+highlight_all_occurrences = false
+override_selected_font_color = false
+context_menu_enabled = true
+smooth_scrolling = false
+v_scroll_speed = 80.0
+hiding_enabled = 0
+wrap_lines = false
+caret_block_mode = false
+caret_blink = false
+caret_blink_speed = 0.65
+caret_moving_by_right_click = true
+_sections_unfolded = [ "Rect" ]
+
+[node name="Panel" type="Panel" parent="." index="4"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 230.0
+margin_top = 100.0
+margin_right = 600.0
+margin_bottom = 440.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+_sections_unfolded = [ "Rect" ]
+
+[node name="Info" type="RichTextLabel" parent="Panel" index="0"]
+
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+margin_left = 20.0
+margin_top = -320.0
+margin_right = 210.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+bbcode_enabled = false
+bbcode_text = ""
+visible_characters = -1
+percent_visible = 1.0
+meta_underlined = true
+tab_size = 4
+text = ""
+scroll_active = false
+scroll_following = false
+selection_enabled = true
+override_selected_font_color = false
+_sections_unfolded = [ "Focus", "Margin" ]
+
+[node name="InfoIp" type="RichTextLabel" parent="Panel" index="1"]
+
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = -160.0
+margin_top = -320.0
+margin_right = -20.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+bbcode_enabled = false
+bbcode_text = ""
+visible_characters = -1
+percent_visible = 1.0
+meta_underlined = false
+tab_size = 4
+text = ""
+scroll_active = true
+scroll_following = false
+selection_enabled = true
+override_selected_font_color = false
+_sections_unfolded = [ "Focus", "Mouse" ]
+
+[node name="IpR" type="Label" parent="Panel" index="2"]
+
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+margin_left = -144.0
+margin_top = 3.0
+margin_right = -102.0
+margin_bottom = 17.0
+rect_pivot_offset = Vector2( 0, 0 )
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "IP ruta"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "Rect" ]
+
+[node name="NombreR" type="Label" parent="Panel" index="3"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 33.0
+margin_top = 3.0
+margin_right = 114.0
+margin_bottom = 17.0
+rect_pivot_offset = Vector2( 0, 0 )
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "Nombre ruta"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "Rect" ]
+
 [connection signal="pressed" from="BuscarAllme" to="." method="_on_BuscarAllme_pressed"]
+
+[connection signal="focus_exited" from="Ruta/Ruta" to="." method="_on_Ruta_focus_exited"]
+
+[connection signal="text_changed" from="Ruta/Ruta" to="." method="_on_Ruta_text_changed"]
+
+[connection signal="focus_exited" from="Ip/Ip" to="." method="_on_Ip_focus_exited"]
+
+[connection signal="text_changed" from="Ip/Ip" to="." method="_on_Ip_text_changed"]
+
+[connection signal="gui_input" from="Panel/Info" to="." method="_on_Info_gui_input"]
+
+[connection signal="gui_input" from="Panel/InfoIp" to="." method="_on_InfoIp_gui_input"]
 
 
