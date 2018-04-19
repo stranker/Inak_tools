@@ -9,28 +9,34 @@ var pathDir = \"//Capo-10/inoc-gestion/Inak_tools/\"
 var pathOperacion = pathDir+\"Operaciones-Carriers/Operacion.txt\"
 var pathCarrier = \"//Capo-10/inoc-gestion/Inak_tools/Operaciones-Carriers/Carriers.txt\"
 var path_archivo_rutas_e_ip = pathDir+\"OutputApp/rutas_e_ip.txt\"
-var pathAllme = pathDir+\"ALLME_\"
+var pathAllme = pathDir+\"ALLME/ALLME_\"
 
 var diccionario = {}
 var diccFiltrado = {}
-var keys_ordenadas = []
 var keys_diccionario = []
 var allmes = []
 var archivo = File.new()
-var carriersRutas = {}
-var operacionRutas = {}
+var carriersDic = {}
+var operacionesDic = {}
+var isupRoutes = {}
+var currentDic = {}
 
 func _ready():
+	_on_SIP_pressed()
 	$AcceptDialog.hide()
 	$AcceptDialog.dialog_text = \"No existen archivos ALLME en CAPO-10\"
 	cargarRutasSiExisten()
 	cargarCarriersOperaciones()
-	$Panel/Info.get_v_scroll().min_value = -10
-	$Panel/InfoIp.get_v_scroll().min_value = -10
+	cargarOptions()
 	pass
 
 func _process(delta):
-	$Panel/Info.get_v_scroll().value = $Panel/InfoIp.get_v_scroll().value
+	if $SIP.disabled:
+		$Panel/Info.get_v_scroll().value = $Panel/InfoIp.get_v_scroll().value
+	else:
+		$Panel/Info.get_v_scroll().value = $Panel/InfoDPC.get_v_scroll().value
+		$Panel/InfoOPC.get_v_scroll().value = $Panel/InfoDPC.get_v_scroll().value
+	pass
 
 func cargarRutasSiExisten():
 	if archivo.file_exists(path_archivo_rutas_e_ip):
@@ -48,13 +54,13 @@ func cargarCarriersOperaciones():
 		while !archOperacion.eof_reached():
 			var line = archOperacion.get_line()
 			if (!(line.begins_with(\"//\") || line == \"\")):
-				operacionRutas[line.substr(0,line.find(\"\\t\"))] = line.substr(line.find(\"\\t\")+1,2)
+				operacionesDic[line.substr(0,line.find(\"\\t\"))] = line.substr(line.find(\"\\t\")+1,2)
 	if archCarrier.file_exists(pathCarrier):
 		archCarrier.open(pathCarrier,File.READ)
 		while !archCarrier.eof_reached():
 			var line = archCarrier.get_line()
 			if (!(line.begins_with(\"//\") || line == \"\")):
-				carriersRutas[line.substr(0,line.find(\"\\t\"))] = line.substr(line.find(\"\\t\")+1,2)
+				carriersDic[line.substr(0,line.find(\"\\t\"))] = line.substr(line.find(\"\\t\")+1,2)
 	archOperacion.close()
 	archCarrier.close()
 	pass
@@ -62,16 +68,22 @@ func cargarCarriersOperaciones():
 func llenar_info(dicc):
 	$Panel/Info.clear()
 	$Panel/InfoIp.clear()
-	keys_ordenadas = dicc.keys()
+	var keys_ordenadas = dicc.keys()
 	keys_ordenadas.sort()
 	for i in keys_ordenadas:
 		$Panel/Info.add_text(i)
 		$Panel/Info.newline()
-		$Panel/InfoIp.add_text(dicc[i])
-		$Panel/InfoIp.newline()
+		if typeof(dicc[i]) == TYPE_STRING:
+			$Panel/InfoIp.add_text(dicc[i])
+			$Panel/InfoIp.newline()
+		else:
+			$Panel/InfoOPC.add_text(dicc[i][0])
+			$Panel/InfoOPC.newline()
+			$Panel/InfoDPC.add_text(dicc[i][1])
+			$Panel/InfoDPC.newline()
 	pass
 
-func routes_and_ips(linea):
+func sipRoutes(linea):
 	if (linea.findn(\"ADD SIPTG\")>=0):
 		var pos_ini_route = linea.findn(\"TGN\") + 5
 		var pos_fin_route = linea.find(\"CSCN\") - 2
@@ -82,11 +94,25 @@ func routes_and_ips(linea):
 		diccionario[route_name] = str(ip_name)
 	pass
 
+func isupRoutes(linea):
+	if (linea.findn(\"ADD N7TG\") >= 0):
+		var pos_ini_route = linea.findn(\"TGN\") + 5
+		var pos_fin_route = linea.find(\"MGWNAME\") - 2
+		var route_name = linea.left(pos_fin_route).right(pos_ini_route)
+		var pos_ini_opc = linea.findn(\"SOPC\") + 6
+		var pos_fin_opc = linea.find(\"SDPC\") - 2
+		var opc = linea.left(pos_fin_opc).right(pos_ini_opc)
+		var pos_ini_dpc = linea.findn(\"SDPC\") + 6
+		var pos_fin_dpc = linea.find(\"PCM\") - 2
+		var dpc = linea.left(pos_fin_dpc).right(pos_ini_dpc)
+		isupRoutes[route_name] = [opc,dpc]
+	pass
+
 func llenar_allmes():
 	var cont = 0
 	var arch = File.new()
 	for i in range(10):
-		var file_path = pathAllme+ str(cont) + \".txt\"
+		var file_path = pathAllme + str(cont) + \".txt\"
 		if arch.file_exists(file_path):
 			allmes.append(file_path)
 			cont += 1
@@ -102,7 +128,8 @@ func leer_archivos():
 		archivo.open(i,File.READ)
 		while !archivo.eof_reached():
 			var linea = archivo.get_line()
-			routes_and_ips(linea)
+			sipRoutes(linea)
+			isupRoutes(linea)
 		archivo.close()
 	pass
 
@@ -113,8 +140,11 @@ func crear_archivo():
 	nuevo_archivo.store_line(\"\")
 	for i in diccionario.keys():
 		nuevo_archivo.store_line(i+\"\\t\"+diccionario[i])
+	nuevo_archivo.store_line(\"////////////// ISUP /////////////////\")
+	nuevo_archivo.store_line(\"Nombre Ruta \\t OPC \\t DPC\")
+	for i in isupRoutes.keys():
+		nuevo_archivo.store_line(i+\"\\t\"+isupRoutes[i][0]+\"\\t\"+isupRoutes[i][1])
 	nuevo_archivo.close()
-	llenar_info(diccionario)
 	pass
 
 func _on_BuscarAllme_pressed():
@@ -126,64 +156,61 @@ func cargar_rutas_archivo():
 	arch.open(path_archivo_rutas_e_ip,File.READ)
 	while !arch.eof_reached():
 		var line = arch.get_line()
-		if !(line.begins_with(\"Nombre\") || line == \"\"):
+		if !(line.begins_with(\"Nombre\") or line == \"\" or line.begins_with(\"///\")):
 			var fin_ruta = line.find(\"172.26\") - 1
-			diccionario[line.substr(0,fin_ruta)] = str(line.substr(fin_ruta+1,line.length()))
+			if(fin_ruta>0):
+				diccionario[line.substr(0,fin_ruta)] = str(line.substr(fin_ruta+1,line.length()))
+			else:
+				var ini_opc = line.findn(\"\\t\") + 1
+				var opc = line.substr(ini_opc,8)
+				var ini_dpc = line.find(\"\\t\") + 1
+				var dpc = line.substr(ini_dpc,8)
+				isupRoutes[line.substr(0,ini_opc)] = [opc,dpc] 
 	arch.close()
 	pass
 
 func _on_Ruta_text_changed():
-	search_in_dictionary(\"ruta\",$Ruta/Ruta.text.to_upper())
+	search_in_dictionary($Ruta/Ruta.text.to_upper())
 	pass
 
-func search_in_dictionary(type, search):
+func search_in_dictionary(search):
 	if search != \"\":
+		var keys_ordenadas = currentDic.keys()
+		keys_ordenadas.sort()
 		$Panel/Info.clear()
 		$Panel/InfoIp.clear()
 		diccFiltrado.clear()
+		var nomenclatura = \"\"
+		var type = \"\"
+		#BUSQUEDA EN OPERACIONES Y CARRIERS
+		for i in carriersDic.keys():
+			if i.begins_with(search):
+				nomenclatura = carriersDic[i]
+				type = \"carrier\"
+				break
+		if nomenclatura == \"\":
+			for i in operacionesDic.keys():
+				if i.find(search)>=0:
+					nomenclatura = operacionesDic[i]
+					type = \"operacion\"
+					break
 		#BUSQUEDA EN RUTAS
-		for i in keys_diccionario:
+		for i in keys_ordenadas:
 			match type:
-				\"ruta\":
-					if i.find(search) >= 0:
-						diccFiltrado[i] = diccionario[i]
-				\"ip\":
-					if diccionario[i].find(search) >= 0:
-						diccFiltrado[i] = diccionario[i]
 				\"carrier\":
-					if i.begins_with(\"2US\"+search) or i.begins_with(\"5US\"+search):
-						diccFiltrado[i] = diccionario[i]
+					if i.begins_with(\"2US\"+nomenclatura) or i.begins_with(\"5US\"+nomenclatura):
+						diccFiltrado[i] = currentDic[i]
 				\"operacion\":
-					if i.begins_with(\"1\"+search) or i.begins_with(\"4\"+search):
-						diccFiltrado[i] = diccionario[i]
-		#BUSQUEDA POR CARRIER
+					if i.begins_with(\"1\"+nomenclatura) or i.begins_with(\"4\"+nomenclatura):
+						diccFiltrado[i] = currentDic[i]
 		if diccFiltrado.empty():
-			for i in carriersRutas.keys():
+			for i in keys_ordenadas:
 				if i.find(search) >= 0:
-					search_in_dictionary(\"carrier\", carriersRutas[i])
-					break
-		#BUSQUEDA POR OPERACION
-		if diccFiltrado.empty():
-			for i in operacionRutas.keys():
-				if i.find(search) >= 0:
-					search_in_dictionary(\"operacion\", operacionRutas[i])
-					break
+					diccFiltrado[i] = currentDic[i]
 		llenar_info(diccFiltrado)
 	else:
-		llenar_info(diccionario)
+		llenar_info(currentDic)
 	pass
-
-func _on_Ip_text_changed():
-	search_in_dictionary(\"ip\", $Ip/Ip.text)
-	pass
-
-func _on_Ruta_focus_exited():
-	$Ruta/Ruta.text = \"\"
-	pass # replace with function body
-
-func _on_Ip_focus_exited():
-	$Ip/Ip.text = \"\"
-	pass # replace with function body
 
 func _on_Info_gui_input( ev ):
 	if ev is InputEventMouseButton:
@@ -207,7 +234,75 @@ func scroll_up():
 
 func scroll_down():
 	$Panel/InfoIp.get_v_scroll().value += 50
-	pass"
+	pass
+
+func _on_SIP_pressed():
+	$ISUP.disabled = false
+	$SIP.disabled = true
+	$Panel/IPRuta.show()
+	$Panel/DPC.hide()
+	$Panel/OPC.hide()
+	$Panel/InfoOPC.hide()
+	$Panel/InfoDPC.hide()
+	$Panel/InfoIp.show()
+	currentDic = diccionario
+	llenar_info(currentDic)
+	pass # replace with function body
+
+func _on_ISUP_pressed():
+	$ISUP.disabled = true
+	$SIP.disabled = false
+	$Panel/DPC.show()
+	$Panel/OPC.show()
+	$Panel/InfoOPC.show()
+	$Panel/InfoDPC.show()
+	$Panel/InfoIp.hide()
+	$Panel/IPRuta.hide()
+	currentDic = isupRoutes
+	llenar_info(currentDic)
+	pass # replace with function body
+
+func cargarOptions():
+	cargarNombreOption()
+	pass
+
+func cargarNombreOption():
+	var options = operacionesDic.keys() + carriersDic.keys()
+	var id = 0
+	for i in options:
+		if i!= \"\":
+			$OperacionCarrier/NombresOption.add_item(i,id)
+		id += 1
+	pass
+
+func _on_NombreRuta_text_changed( new_text ):
+	search_in_dictionary(new_text.to_upper())
+	pass # replace with function body
+
+func _on_IPRuta_text_changed( new_text ):
+	if new_text != \"\":
+		$Panel/Info.clear()
+		$Panel/InfoIp.clear()
+		diccFiltrado.clear()
+		for i in keys_diccionario:
+			if diccionario[i].find(new_text)>=0:
+				diccFiltrado[i] = diccionario[i]
+		llenar_info(diccFiltrado)
+	else:
+		llenar_info(diccionario)
+	pass # replace with function body
+
+func _on_OPC_text_changed( new_text ):
+	$Panel/InfoOPC.clear()
+	$Panel/Info.clear()
+	$Panel/InfoDPC.clear()
+	for i in currentDic.keys():
+		print(currentDic[i])
+		if currentDic[i][0].find(new_text.to_upper()):
+			diccFiltrado[i] = [currentDic[i][0],currentDic[i][1]]
+	llenar_info(diccFiltrado)
+	pass # replace with function body
+"
 _sections_unfolded = [ "Resource" ]
 
 [node name="Main" type="Node" index="0"]
@@ -220,12 +315,12 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-margin_left = -67.0
-margin_top = -100.0
+margin_left = -57.0
+margin_top = -60.0
 margin_right = 63.0
-margin_bottom = -60.0
+margin_bottom = -30.0
 rect_scale = Vector2( 1.5, 1.5 )
-rect_pivot_offset = Vector2( 65, 20 )
+rect_pivot_offset = Vector2( 60, 15 )
 focus_mode = 2
 mouse_filter = 0
 mouse_default_cursor_shape = 0
@@ -261,122 +356,16 @@ window_title = "Alerta!"
 resizable = false
 dialog_hide_on_ok = true
 
-[node name="Ruta" type="Label" parent="." index="2"]
+[node name="Panel" type="Panel" parent="." index="2"]
 
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-margin_left = 60.0
-margin_top = 180.0
-margin_right = 100.0
-margin_bottom = 194.0
-rect_pivot_offset = Vector2( 0, 0 )
-mouse_filter = 2
-mouse_default_cursor_shape = 0
-size_flags_horizontal = 1
-size_flags_vertical = 4
-text = "Ruta"
-percent_visible = 1.0
-lines_skipped = 0
-max_lines_visible = -1
-
-[node name="Ruta" type="TextEdit" parent="Ruta" index="0"]
-
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-margin_top = 15.0
-margin_right = 150.0
-margin_bottom = 45.0
-rect_pivot_offset = Vector2( 0, 0 )
-focus_mode = 2
-mouse_filter = 0
-mouse_default_cursor_shape = 0
-size_flags_horizontal = 1
-size_flags_vertical = 1
-text = ""
-readonly = false
-highlight_current_line = false
-syntax_highlighting = false
-show_line_numbers = false
-highlight_all_occurrences = false
-override_selected_font_color = false
-context_menu_enabled = true
-smooth_scrolling = false
-v_scroll_speed = 80.0
-hiding_enabled = 0
-wrap_lines = false
-caret_block_mode = false
-caret_blink = false
-caret_blink_speed = 0.65
-caret_moving_by_right_click = true
-_sections_unfolded = [ "Rect" ]
-
-[node name="Ip" type="Label" parent="." index="3"]
-
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-margin_left = 60.0
-margin_top = 280.0
-margin_right = 100.0
-margin_bottom = 294.0
-rect_pivot_offset = Vector2( 0, 0 )
-mouse_filter = 2
-mouse_default_cursor_shape = 0
-size_flags_horizontal = 1
-size_flags_vertical = 4
-text = "Ip"
-percent_visible = 1.0
-lines_skipped = 0
-max_lines_visible = -1
-
-[node name="Ip" type="TextEdit" parent="Ip" index="0"]
-
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-margin_top = 15.0
-margin_right = 150.0
-margin_bottom = 45.0
-rect_pivot_offset = Vector2( 0, 0 )
-focus_mode = 2
-mouse_filter = 0
-mouse_default_cursor_shape = 0
-size_flags_horizontal = 1
-size_flags_vertical = 1
-text = ""
-readonly = false
-highlight_current_line = false
-syntax_highlighting = false
-show_line_numbers = false
-highlight_all_occurrences = false
-override_selected_font_color = false
-context_menu_enabled = true
-smooth_scrolling = false
-v_scroll_speed = 80.0
-hiding_enabled = 0
-wrap_lines = false
-caret_block_mode = false
-caret_blink = false
-caret_blink_speed = 0.65
-caret_moving_by_right_click = true
-_sections_unfolded = [ "Rect" ]
-
-[node name="Panel" type="Panel" parent="." index="4"]
-
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-margin_left = 230.0
-margin_top = 100.0
-margin_right = 600.0
-margin_bottom = 440.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -205.0
+margin_top = -185.0
+margin_right = 230.0
+margin_bottom = 185.0
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = true
 mouse_filter = 0
@@ -391,11 +380,12 @@ anchor_left = 0.0
 anchor_top = 1.0
 anchor_right = 0.0
 anchor_bottom = 1.0
-margin_left = 20.0
-margin_top = -320.0
-margin_right = 210.0
+margin_left = 15.0
+margin_top = -335.0
+margin_right = 165.0
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = true
+focus_mode = 2
 mouse_filter = 0
 mouse_default_cursor_shape = 0
 size_flags_horizontal = 1
@@ -419,11 +409,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-margin_left = -160.0
-margin_top = -320.0
-margin_right = -20.0
+margin_left = -190.0
+margin_top = -335.0
+margin_right = -25.0
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = true
+focus_mode = 2
 mouse_filter = 0
 mouse_default_cursor_shape = 0
 size_flags_horizontal = 1
@@ -441,60 +432,271 @@ selection_enabled = true
 override_selected_font_color = false
 _sections_unfolded = [ "Focus", "Mouse" ]
 
-[node name="IpR" type="Label" parent="Panel" index="2"]
+[node name="InfoOPC" type="RichTextLabel" parent="Panel" index="2"]
 
 anchor_left = 1.0
-anchor_top = 0.0
+anchor_top = 1.0
 anchor_right = 1.0
-anchor_bottom = 0.0
-margin_left = -144.0
-margin_top = 3.0
-margin_right = -102.0
-margin_bottom = 17.0
+anchor_bottom = 1.0
+margin_left = -270.0
+margin_top = -335.0
+margin_right = -140.0
 rect_pivot_offset = Vector2( 0, 0 )
-mouse_filter = 2
+rect_clip_content = true
+focus_mode = 2
+mouse_filter = 0
 mouse_default_cursor_shape = 0
 size_flags_horizontal = 1
-size_flags_vertical = 4
-text = "IP ruta"
+size_flags_vertical = 1
+bbcode_enabled = false
+bbcode_text = ""
+visible_characters = -1
 percent_visible = 1.0
-lines_skipped = 0
-max_lines_visible = -1
-_sections_unfolded = [ "Rect" ]
+meta_underlined = false
+tab_size = 4
+text = ""
+scroll_active = false
+scroll_following = false
+selection_enabled = true
+override_selected_font_color = false
+_sections_unfolded = [ "Focus", "Mouse", "Rect" ]
 
-[node name="NombreR" type="Label" parent="Panel" index="3"]
+[node name="InfoDPC" type="RichTextLabel" parent="Panel" index="3"]
+
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = -140.0
+margin_top = -335.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+bbcode_enabled = false
+bbcode_text = ""
+visible_characters = -1
+percent_visible = 1.0
+meta_underlined = false
+tab_size = 4
+text = ""
+scroll_active = true
+scroll_following = false
+selection_enabled = true
+override_selected_font_color = false
+_sections_unfolded = [ "Focus", "Mouse", "Rect" ]
+
+[node name="NombreRuta" type="LineEdit" parent="Panel" index="4"]
 
 anchor_left = 0.0
 anchor_top = 0.0
 anchor_right = 0.0
 anchor_bottom = 0.0
-margin_left = 33.0
-margin_top = 3.0
-margin_right = 114.0
-margin_bottom = 17.0
+margin_left = 25.0
+margin_top = 5.0
+margin_right = 130.0
+margin_bottom = 29.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 1
+size_flags_horizontal = 1
+size_flags_vertical = 1
+text = "Nombre ruta"
+focus_mode = 2
+context_menu_enabled = true
+placeholder_alpha = 0.6
+caret_blink = false
+caret_blink_speed = 0.65
+caret_position = 0
+
+[node name="OPC" type="LineEdit" parent="Panel" index="5"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 165.0
+margin_top = 5.0
+margin_right = 270.0
+margin_bottom = 29.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 1
+size_flags_horizontal = 1
+size_flags_vertical = 1
+text = "OPC"
+focus_mode = 2
+context_menu_enabled = true
+placeholder_alpha = 0.6
+caret_blink = false
+caret_blink_speed = 0.65
+caret_position = 0
+
+[node name="DPC" type="LineEdit" parent="Panel" index="6"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 305.0
+margin_top = 5.0
+margin_right = 410.0
+margin_bottom = 29.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 1
+size_flags_horizontal = 1
+size_flags_vertical = 1
+text = "OPC"
+focus_mode = 2
+context_menu_enabled = true
+placeholder_alpha = 0.6
+caret_blink = false
+caret_blink_speed = 0.65
+caret_position = 0
+
+[node name="IPRuta" type="LineEdit" parent="Panel" index="7"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 245.0
+margin_top = 5.0
+margin_right = 350.0
+margin_bottom = 29.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 1
+size_flags_horizontal = 1
+size_flags_vertical = 1
+text = "IP ruta"
+focus_mode = 2
+context_menu_enabled = true
+placeholder_alpha = 0.6
+caret_blink = false
+caret_blink_speed = 0.65
+caret_position = 0
+
+[node name="SIP" type="Button" parent="." index="3"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 250.0
+margin_top = 60.0
+margin_right = 350.0
+margin_bottom = 100.0
+rect_pivot_offset = Vector2( 0, 0 )
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+disabled = true
+toggle_mode = false
+enabled_focus_mode = 2
+shortcut = null
+group = null
+text = "SIP"
+flat = false
+align = 1
+
+[node name="ISUP" type="Button" parent="." index="4"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 420.0
+margin_top = 60.0
+margin_right = 520.0
+margin_bottom = 100.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+toggle_mode = false
+enabled_focus_mode = 2
+shortcut = null
+group = null
+text = "ISUP"
+flat = false
+align = 1
+
+[node name="OperacionCarrier" type="Label" parent="." index="5"]
+
+editor/display_folded = true
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 20.0
+margin_top = 170.0
+margin_right = 133.0
+margin_bottom = 184.0
 rect_pivot_offset = Vector2( 0, 0 )
 mouse_filter = 2
 mouse_default_cursor_shape = 0
 size_flags_horizontal = 1
 size_flags_vertical = 4
-text = "Nombre ruta"
+text = "Operacion/Carrier"
 percent_visible = 1.0
 lines_skipped = 0
 max_lines_visible = -1
-_sections_unfolded = [ "Rect" ]
+
+[node name="NombresOption" type="OptionButton" parent="OperacionCarrier" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 20.0
+margin_right = 150.0
+margin_bottom = 60.0
+rect_pivot_offset = Vector2( 0, 0 )
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+toggle_mode = false
+action_mode = 0
+enabled_focus_mode = 2
+shortcut = null
+group = null
+flat = false
+align = 0
+selected = -1
+items = [  ]
 
 [connection signal="pressed" from="BuscarAllme" to="." method="_on_BuscarAllme_pressed"]
-
-[connection signal="focus_exited" from="Ruta/Ruta" to="." method="_on_Ruta_focus_exited"]
-
-[connection signal="text_changed" from="Ruta/Ruta" to="." method="_on_Ruta_text_changed"]
-
-[connection signal="focus_exited" from="Ip/Ip" to="." method="_on_Ip_focus_exited"]
-
-[connection signal="text_changed" from="Ip/Ip" to="." method="_on_Ip_text_changed"]
 
 [connection signal="gui_input" from="Panel/Info" to="." method="_on_Info_gui_input"]
 
 [connection signal="gui_input" from="Panel/InfoIp" to="." method="_on_InfoIp_gui_input"]
+
+[connection signal="gui_input" from="Panel/InfoOPC" to="." method="_on_InfoIp_gui_input"]
+
+[connection signal="gui_input" from="Panel/InfoDPC" to="." method="_on_InfoIp_gui_input"]
+
+[connection signal="text_changed" from="Panel/NombreRuta" to="." method="_on_NombreRuta_text_changed"]
+
+[connection signal="text_changed" from="Panel/OPC" to="." method="_on_OPC_text_changed"]
+
+[connection signal="text_changed" from="Panel/IPRuta" to="." method="_on_IPRuta_text_changed"]
+
+[connection signal="pressed" from="SIP" to="." method="_on_SIP_pressed"]
+
+[connection signal="pressed" from="ISUP" to="." method="_on_ISUP_pressed"]
 
 
